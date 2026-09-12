@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Settings</h2>
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">#characters channel ID</label>
+    <input class="form-control" name="characters_channel_id" value="{{ values.characters_channel_id }}">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">#welcome channel ID</label>
+    <input class="form-control" name="welcome_channel_id" value="{{ values.welcome_channel_id }}">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">#announcements channel ID</label>
+    <input class="form-control" name="announcements_channel_id" value="{{ values.announcements_channel_id }}">
+  </div>
+  <button class="btn btn-primary">Save</button>
+</form>
+<p class="text-muted mt-3">Right-click a channel in Discord (Developer Mode on) → Copy Channel ID.</p>
+{% endblock %}
