@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ "Edit" if character else "New" }} Character</h2>
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">Name (this is how people trigger this character — by typing it in chat)</label>
+    <input class="form-control" name="name" required value="{{ character.name if character else '' }}">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Avatar image URL (optional — shown as the character's profile picture)</label>
+    <input class="form-control" name="avatar_url" value="{{ character.avatar_url if character else '' }}">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Personality</label>
+    <textarea class="form-control" name="personality" rows="3">{{ character.personality if character else '' }}</textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Backstory</label>
+    <textarea class="form-control" name="backstory" rows="3">{{ character.backstory if character else '' }}</textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Speech style</label>
+    <textarea class="form-control" name="speech_style" rows="3">{{ character.speech_style if character else '' }}</textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Boundaries (optional — leave blank to use the default safety/style rules)</label>
+    <textarea class="form-control" name="boundaries" rows="3">{{ character.boundaries if character else '' }}</textarea>
+  </div>
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" name="active" id="active" {{ "checked" if not character or character.active else "" }}>
+    <label class="form-check-label" for="active">Active (can respond in the characters channel)</label>
+  </div>
+  <div class="form-check mb-3">
+    <input class="form-check-input" type="checkbox" name="welcome_enabled" id="welcome_enabled" {{ "checked" if character and character.welcome_enabled else "" }}>
+    <label class="form-check-label" for="welcome_enabled">Greets new members in the welcome channel</label>
+  </div>
+  <button class="btn btn-primary">Save</button>
+  <a href="{{ url_for('index') }}" class="btn btn-link">Cancel</a>
+</form>
+{% endblock %}
