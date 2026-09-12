@@ -3,7 +3,7 @@ import threading
 
 import database as db
 import dashboard
-import Discord_bot as discord_bot
+import discord_bot
 
 
 def run_dashboard():
