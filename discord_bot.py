@@ -1,5 +1,7 @@
 import os
 import asyncio
+import re
+import time
 from collections import defaultdict, deque
 
 import discord
@@ -13,6 +15,7 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-3.5-flash"
 HISTORY_LENGTH = 30
 WEBHOOK_NAME = "Character Bots"
+ACTIVE_CONVO_TIMEOUT = 180  # seconds a conversation stays "open" without repeating the character's name
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -24,6 +27,9 @@ genai_client = genai.Client(api_key=GEMINI_API_KEY)
 # channel_id -> deque of {"role": "user"|"model", "parts": [text]}
 history = defaultdict(lambda: deque(maxlen=HISTORY_LENGTH))
 _webhook_cache = {}
+
+# channel_id -> {"character_id": int, "user_id": int, "last_active": float}
+active_conversations = {}
 
 
 def default_boundaries() -> str:
@@ -85,9 +91,10 @@ def allowed_channel_ids() -> set:
 
 
 def find_mentioned_character(content: str, characters: list):
-    lowered = content.lower()
+    words = set(re.findall(r"\w+", content.lower()))
     for character in characters:
-        if character["name"].lower() in lowered:
+        name_words = character["name"].lower().split()
+        if any(name_word in words for name_word in name_words):
             return character
     return None
 
@@ -204,6 +211,20 @@ async def on_message(message: discord.Message):
             character = db.get_character_by_name(resolved.author.name)
 
     if character is None:
+        # No name mentioned and not a direct reply — check whether this
+        # user is in an ongoing conversation with a character that hasn't
+        # gone quiet yet.
+        convo = active_conversations.get(message.channel.id)
+        if (
+            convo
+            and convo["user_id"] == message.author.id
+            and time.time() - convo["last_active"] <= ACTIVE_CONVO_TIMEOUT
+        ):
+            character = db.get_character(convo["character_id"])
+            if character:
+                print(f"[DEBUG] Continuing active conversation with {character['name']}.")
+
+    if character is None:
         print("[DEBUG] No character matched this message — ignoring.")
         return
 
@@ -226,3 +247,8 @@ async def on_message(message: discord.Message):
         history[message.channel.id].append(
             {"role": "model", "parts": [{"text": f"{character['name']}: {reply}"}]}
         )
+        active_conversations[message.channel.id] = {
+            "character_id": character["id"],
+            "user_id": message.author.id,
+            "last_active": time.time(),
+        }
