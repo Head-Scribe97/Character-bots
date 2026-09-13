@@ -109,15 +109,16 @@ def _call_gemini(system_prompt: str, contents: list, max_tokens: int) -> str:
             thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
+    if response.candidates:
+        print(f"[DEBUG] Gemini finish_reason: {response.candidates[0].finish_reason}")
     return response.text or ""
 
 
 async def generate_reply(character: dict, channel_id: int) -> str:
     contents = list(history[channel_id])
     return await asyncio.to_thread(
-        _call_gemini, build_system_prompt(character), contents, 800
+        _call_gemini, build_system_prompt(character), contents, 2048
     )
-
 
 @client.event
 async def on_ready():
