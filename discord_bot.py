@@ -106,6 +106,7 @@ def _call_gemini(system_prompt: str, contents: list, max_tokens: int) -> str:
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             max_output_tokens=max_tokens,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
     return response.text or ""
@@ -114,7 +115,7 @@ def _call_gemini(system_prompt: str, contents: list, max_tokens: int) -> str:
 async def generate_reply(character: dict, channel_id: int) -> str:
     contents = list(history[channel_id])
     return await asyncio.to_thread(
-        _call_gemini, build_system_prompt(character), contents, 400
+        _call_gemini, build_system_prompt(character), contents, 800
     )
 
 
