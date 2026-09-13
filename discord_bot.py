@@ -10,7 +10,7 @@ import database as db
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-MODEL = "gemini-3.8-flash"
+MODEL = "gemini-3.5-flash"
 HISTORY_LENGTH = 30
 WEBHOOK_NAME = "Character Bots"
 
