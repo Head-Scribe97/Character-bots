@@ -1,7 +1,7 @@
 import sqlite3
 from contextlib import contextmanager
 
-DB_PATH = "characters.db"
+DB_PATH = "/data/characters.db"
 
 
 @contextmanager
