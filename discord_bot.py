@@ -164,6 +164,11 @@ async def on_member_join(member: discord.Member):
 
 @client.event
 async def on_message(message: discord.Message):
+    print(
+        f"[DEBUG] Received message in channel {message.channel.id} "
+        f"from {message.author}: {message.content!r}"
+    )
+
     if message.author == client.user:
         return
 
@@ -175,7 +180,10 @@ async def on_message(message: discord.Message):
         )
         return
 
-    if message.channel.id not in allowed_channel_ids():
+    allowed = allowed_channel_ids()
+    print(f"[DEBUG] Allowed channel IDs from settings: {allowed}")
+    if message.channel.id not in allowed:
+        print("[DEBUG] Channel not in allowed list — ignoring.")
         return
 
     content = message.content.strip()
@@ -187,6 +195,7 @@ async def on_message(message: discord.Message):
         )
 
     characters = db.list_characters(active_only=True)
+    print(f"[DEBUG] Active characters: {[c['name'] for c in characters]}")
     character = find_mentioned_character(content, characters)
 
     if character is None and message.reference and message.reference.resolved:
@@ -195,7 +204,10 @@ async def on_message(message: discord.Message):
             character = db.get_character_by_name(resolved.author.name)
 
     if character is None:
+        print("[DEBUG] No character matched this message — ignoring.")
         return
+
+    print(f"[DEBUG] Matched character: {character['name']} — generating reply.")
 
     async with message.channel.typing():
         try:
