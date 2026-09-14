@@ -1,35 +1,27 @@
 import os
 import asyncio
-import re
-import time
 from collections import defaultdict, deque
 
 import discord
-from google import genai
-from google.genai import types
+from anthropic import Anthropic
 
 import database as db
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-MODEL = "gemini-3.5-flash"
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+MODEL = "claude-sonnet-4-6"
 HISTORY_LENGTH = 30
 WEBHOOK_NAME = "Character Bots"
-ACTIVE_CONVO_TIMEOUT = 180  # seconds a conversation stays "open" without repeating the character's name
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True  # required to detect new members joining
 
 client = discord.Client(intents=intents)
-genai_client = genai.Client(api_key=GEMINI_API_KEY)
+anthropic = Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# channel_id -> deque of {"role": "user"|"model", "parts": [text]}
 history = defaultdict(lambda: deque(maxlen=HISTORY_LENGTH))
 _webhook_cache = {}
-
-# channel_id -> {"character_id": int, "user_id": int, "last_active": float}
-active_conversations = {}
 
 
 def default_boundaries() -> str:
@@ -91,40 +83,23 @@ def allowed_channel_ids() -> set:
 
 
 def find_mentioned_character(content: str, characters: list):
-    words = set(re.findall(r"\w+", content.lower()))
+    lowered = content.lower()
     for character in characters:
-        name_words = character["name"].lower().split()
-        if any(name_word in words for name_word in name_words):
+        if character["name"].lower() in lowered:
             return character
     return None
 
 
-def _call_gemini(system_prompt: str, contents: list, max_tokens: int) -> str:
-    response = genai_client.models.generate_content(
-        model=MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            max_output_tokens=max_tokens,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        ),
-    )
-    if response.candidates:
-        print(f"[DEBUG] Gemini finish_reason: {response.candidates[0].finish_reason}")
-    return response.text or ""
-
-
-def strip_name_prefix(reply: str, name: str) -> str:
-    pattern = rf"^\s*{re.escape(name)}\s*:\s*"
-    return re.sub(pattern, "", reply, count=1, flags=re.IGNORECASE).strip()
-
-
 async def generate_reply(character: dict, channel_id: int) -> str:
-    contents = list(history[channel_id])
-    reply = await asyncio.to_thread(
-        _call_gemini, build_system_prompt(character), contents, 2048
+    messages = list(history[channel_id])
+    response = await asyncio.to_thread(
+        anthropic.messages.create,
+        model=MODEL,
+        max_tokens=400,
+        system=build_system_prompt(character),
+        messages=messages,
     )
-    return strip_name_prefix(reply, character["name"])
+    return "".join(block.text for block in response.content if block.type == "text")
 
 
 @client.event
@@ -147,3 +122,87 @@ async def on_member_join(member: discord.Member):
     webhook = await get_webhook(channel)
 
     for character in greeters:
+        prompt = [
+            {
+                "role": "user",
+                "content": (
+                    f"A new member named {member.display_name} just joined "
+                    "the Discord server. Post a short, in-character welcome "
+                    "message for them."
+                ),
+            }
+        ]
+        try:
+            response = await asyncio.to_thread(
+                anthropic.messages.create,
+                model=MODEL,
+                max_tokens=200,
+                system=build_system_prompt(character),
+                messages=prompt,
+            )
+            greeting = "".join(b.text for b in response.content if b.type == "text")
+        except Exception as e:
+            print(f"Error generating welcome message for {character['name']}: {e}")
+            continue
+
+        if greeting:
+            await webhook.send(
+                content=greeting,
+                username=character["name"],
+                avatar_url=character["avatar_url"] or None,
+            )
+            await asyncio.sleep(1.5)  # stagger multiple greetings
+
+
+@client.event
+async def on_message(message: discord.Message):
+    if message.author == client.user:
+        return
+
+    if message.webhook_id is not None:
+        # A message posted by one of our own character webhooks — record it
+        # so other characters can react to it, but don't reply to ourselves.
+        history[message.channel.id].append(
+            {"role": "assistant", "content": f"{message.author.name}: {message.content}"}
+        )
+        return
+
+    if message.channel.id not in allowed_channel_ids():
+        return
+
+    content = message.content.strip()
+    author_name = message.author.display_name
+
+    if content:
+        history[message.channel.id].append(
+            {"role": "user", "content": f"{author_name}: {content}"}
+        )
+
+    characters = db.list_characters(active_only=True)
+    character = find_mentioned_character(content, characters)
+
+    if character is None and message.reference and message.reference.resolved:
+        resolved = message.reference.resolved
+        if getattr(resolved, "webhook_id", None):
+            character = db.get_character_by_name(resolved.author.name)
+
+    if character is None:
+        return
+
+    async with message.channel.typing():
+        try:
+            reply = await generate_reply(character, message.channel.id)
+        except Exception as e:
+            print(f"Error generating reply: {e}")
+            return
+
+    if reply:
+        webhook = await get_webhook(message.channel)
+        await webhook.send(
+            content=reply,
+            username=character["name"],
+            avatar_url=character["avatar_url"] or None,
+        )
+        history[message.channel.id].append(
+            {"role": "assistant", "content": f"{character['name']}: {reply}"}
+        )
