@@ -212,16 +212,11 @@ async def on_message(message: discord.Message):
         if getattr(resolved, "webhook_id", None):
             character = db.get_character_by_name(resolved.author.name)
 
-    if character is None:
+       if character is None:
         # No name mentioned and not a direct reply — check whether this
-        # user is in an ongoing conversation with a character that hasn't
-        # gone quiet yet.
+        # channel has an active, still-open conversation with a character.
         convo = active_conversations.get(message.channel.id)
-        if (
-            convo
-            and convo["user_id"] == message.author.id
-            and time.time() - convo["last_active"] <= ACTIVE_CONVO_TIMEOUT
-        ):
+        if convo and time.time() - convo["last_active"] <= ACTIVE_CONVO_TIMEOUT:
             character = db.get_character(convo["character_id"])
             if character:
                 print(f"[DEBUG] Continuing active conversation with {character['name']}.")
