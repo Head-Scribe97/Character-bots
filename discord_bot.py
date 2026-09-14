@@ -99,19 +99,30 @@ def find_mentioned_character(content: str, characters: list):
     return None
 
 
-def _call_gemini(system_prompt: str, contents: list, max_tokens: int) -> str:
-    response = genai_client.models.generate_content(
-        model=MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            max_output_tokens=max_tokens,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        ),
-    )
-    if response.candidates:
-        print(f"[DEBUG] Gemini finish_reason: {response.candidates[0].finish_reason}")
-    return response.text or ""
+def _call_gemini(system_prompt: str, contents: list, max_tokens: int, retries: int = 3) -> str:
+    last_error = None
+    for attempt in range(retries):
+        try:
+            response = genai_client.models.generate_content(
+                model=MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=max_tokens,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+            if response.candidates:
+                print(f"[DEBUG] Gemini finish_reason: {response.candidates[0].finish_reason}")
+            return response.text or ""
+        except Exception as e:
+            last_error = e
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                print(f"[DEBUG] Gemini overloaded (attempt {attempt + 1}/{retries}), retrying...")
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+    raise last_error
 
 
 def strip_name_prefix(reply: str, name: str) -> str:
@@ -239,6 +250,12 @@ async def on_message(message: discord.Message):
             reply = await generate_reply(character, message.channel.id)
         except Exception as e:
             print(f"Error generating reply: {e}")
+            webhook = await get_webhook(message.channel)
+            await webhook.send(
+                content="(signal's spotty — give me a sec and try that again)",
+                username=character["name"],
+                avatar_url=character["avatar_url"] or None,
+            )
             return
 
     if reply:
