@@ -114,11 +114,18 @@ def _call_gemini(system_prompt: str, contents: list, max_tokens: int) -> str:
     return response.text or ""
 
 
+def strip_name_prefix(reply: str, name: str) -> str:
+    pattern = rf"^\s*{re.escape(name)}\s*:\s*"
+    return re.sub(pattern, "", reply, count=1, flags=re.IGNORECASE).strip()
+
+
 async def generate_reply(character: dict, channel_id: int) -> str:
     contents = list(history[channel_id])
-    return await asyncio.to_thread(
+    reply = await asyncio.to_thread(
         _call_gemini, build_system_prompt(character), contents, 2048
     )
+    return strip_name_prefix(reply, character["name"])
+
 
 @client.event
 async def on_ready():
@@ -140,112 +147,3 @@ async def on_member_join(member: discord.Member):
     webhook = await get_webhook(channel)
 
     for character in greeters:
-        prompt_contents = [
-            {
-                "role": "user",
-                "parts": [
-                    {
-                        "text": (
-                            f"A new member named {member.display_name} just "
-                            "joined the Discord server. Post a short, "
-                            "in-character welcome message for them."
-                        )
-                    }
-                ],
-            }
-        ]
-        try:
-            greeting = await asyncio.to_thread(
-                _call_gemini, build_system_prompt(character), prompt_contents, 200
-            )
-        except Exception as e:
-            print(f"Error generating welcome message for {character['name']}: {e}")
-            continue
-
-        if greeting:
-            await webhook.send(
-                content=greeting,
-                username=character["name"],
-                avatar_url=character["avatar_url"] or None,
-            )
-            await asyncio.sleep(1.5)  # stagger multiple greetings
-
-
-@client.event
-async def on_message(message: discord.Message):
-    print(
-        f"[DEBUG] Received message in channel {message.channel.id} "
-        f"from {message.author}: {message.content!r}"
-    )
-
-    if message.author == client.user:
-        return
-
-    if message.webhook_id is not None:
-        # A message posted by one of our own character webhooks — record it
-        # so other characters can react to it, but don't reply to ourselves.
-        history[message.channel.id].append(
-            {"role": "model", "parts": [{"text": f"{message.author.name}: {message.content}"}]}
-        )
-        return
-
-    allowed = allowed_channel_ids()
-    print(f"[DEBUG] Allowed channel IDs from settings: {allowed}")
-    if message.channel.id not in allowed:
-        print("[DEBUG] Channel not in allowed list — ignoring.")
-        return
-
-    content = message.content.strip()
-    author_name = message.author.display_name
-
-    if content:
-        history[message.channel.id].append(
-            {"role": "user", "parts": [{"text": f"{author_name}: {content}"}]}
-        )
-
-    characters = db.list_characters(active_only=True)
-    print(f"[DEBUG] Active characters: {[c['name'] for c in characters]}")
-    character = find_mentioned_character(content, characters)
-
-    if character is None and message.reference and message.reference.resolved:
-        resolved = message.reference.resolved
-        if getattr(resolved, "webhook_id", None):
-            character = db.get_character_by_name(resolved.author.name)
-
-       if character is None:
-        # No name mentioned and not a direct reply — check whether this
-        # channel has an active, still-open conversation with a character.
-        convo = active_conversations.get(message.channel.id)
-        if convo and time.time() - convo["last_active"] <= ACTIVE_CONVO_TIMEOUT:
-            character = db.get_character(convo["character_id"])
-            if character:
-                print(f"[DEBUG] Continuing active conversation with {character['name']}.")
-
-    if character is None:
-        print("[DEBUG] No character matched this message — ignoring.")
-        return
-
-    print(f"[DEBUG] Matched character: {character['name']} — generating reply.")
-
-    async with message.channel.typing():
-        try:
-            reply = await generate_reply(character, message.channel.id)
-        except Exception as e:
-            print(f"Error generating reply: {e}")
-            return
-
-    if reply:
-        webhook = await get_webhook(message.channel)
-        await webhook.send(
-            content=reply,
-            username=character["name"],
-            avatar_url=character["avatar_url"] or None,
-        )
-        history[message.channel.id].append(
-            {"role": "model", "parts": [{"text": f"{character['name']}: {reply}"}]}
-        )
-        active_conversations[message.channel.id] = {
-            "character_id": character["id"],
-            "user_id": message.author.id,
-            "last_active": time.time(),
-        }
