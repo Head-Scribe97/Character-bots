@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Post an announcement as {{ character.name }}</h2>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">What should they announce or talk about?</label>
+    <textarea class="form-control" name="topic" rows="3" required placeholder="e.g. Threshing is happening this Friday, cadets should report to the field at dawn"></textarea>
+  </div>
+  <button class="btn btn-primary">Post to #announcements</button>
+  <a href="{{ url_for('index') }}" class="btn btn-link">Cancel</a>
+</form>
+{% endblock %}
