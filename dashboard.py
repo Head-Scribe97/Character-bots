@@ -1,8 +1,10 @@
 import os
+import asyncio
 
 from flask import Flask, render_template, request, redirect, url_for, session
 
 import database as db
+import discord_bot
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-me-in-production")
@@ -64,6 +66,28 @@ def edit_character(character_id):
 def delete_character(character_id):
     db.delete_character(character_id)
     return redirect(url_for("index"))
+
+
+@app.route("/characters/<int:character_id>/announce", methods=["GET", "POST"])
+def announce_character(character_id):
+    character = db.get_character(character_id)
+    if character is None:
+        return redirect(url_for("index"))
+
+    error = None
+    if request.method == "POST":
+        topic = request.form.get("topic", "").strip()
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                discord_bot.post_announcement(character_id, topic),
+                discord_bot.client.loop,
+            )
+            future.result(timeout=30)
+            return redirect(url_for("index"))
+        except Exception as e:
+            error = str(e)
+
+    return render_template("announce_form.html", character=character, error=error)
 
 
 @app.route("/settings", methods=["GET", "POST"])
